@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D 粒子手势交互系统 - 最终修复版</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #050505; font-family: 'Segoe UI', sans-serif; }
+        
+        /* 容器布局 */
+        #container { position: relative; width: 100vw; height: 100vh; }
+
+        /* 3D 渲染层 (底层) */
+        #webgl-canvas { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; 
+        }
+
+        /* 手势骨骼绘制层 (中间层) */
+        #gesture-canvas { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; 
+            pointer-events: none; /* 让鼠标穿透 */
+        }
+
+        /* 状态面板 (顶层) */
+        #status-panel {
+            position: absolute; top: 20px; left: 20px; z-index: 3;
+            color: rgba(255, 255, 255, 0.9);
+            background: rgba(10, 20, 30, 0.7);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid rgba(100, 200, 255, 0.3);
+            backdrop-filter: blur(8px);
+            pointer-events: none;
+            min-width: 260px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+
+        #input-video { display: none; } /* 隐藏原始画面 */
+        
+        h1 { margin: 0 0 15px 0; font-size: 1.1rem; text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid rgba(255,255,255,0.2); padding-bottom: 10px; color: #fff; }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.9rem; }
+        .label { color: #aaa; }
+        .value { font-weight: bold; color: #0ff; }
+        .value.active { color: #0f0; text-shadow: 0 0 5px #0f0; }
+        
+        .guide { margin-top:15px; font-size: 0.8em; color: #888; line-height: 1.6; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px;}
+    </style>
+</head>
+<body>
+
+<div id="container">
+    <div id="status-panel">
+        <h1>交互状态监控</h1>
+        <div class="info-row">
+            <span class="label">系统状态:</span>
+            <span id="status-text" class="value" style="color:orange">正在加载...</span>
+        </div>
+        <div class="info-row">
+            <span class="label">✋ 左手 (切换):</span>
+            <span id="left-cmd" class="value">-</span>
+        </div>
+        <div class="info-row">
+            <span class="label">👌 右手 (缩放):</span>
+            <span id="right-cmd" class="value">1.0x</span>
+        </div>
+        <div class="guide">
+            <strong>操作指南:</strong><br>
+            • 左手: 竖起手指 (1-5) 切换模型<br>
+            • 左手: 握拳 (0) 仅显示背景<br>
+            • 右手: 拇指+食指 捏合/张开 控制大小
+        </div>
+    </div>
+
+    <video id="input-video" playsinline></video>
+    <canvas id="gesture-canvas"></canvas>
+    <canvas id="webgl-canvas"></canvas>
+</div>
+
+<script type="module">
+    // 2. 仅保留 Three.js 和 GUI 的模块导入 (MediaPipe 改用全局变量)
+    import * as THREE from 'https://cdn.skypack.dev/three@0.136.0';
+    import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136.0/examples/jsm/controls/OrbitControls.js';
+    import GUI from 'https://cdn.skypack.dev/lil-gui';
+
+    // 3. 从全局 window 对象获取 MediaPipe (解决 constructor 报错的核心)
+    const Hands = window.Hands;
+    const Camera = window.Camera;
+    const drawConnectors = window.drawConnectors;
+    const drawLandmarks = window.drawLandmarks;
+    const HAND_CONNECTIONS = window.HAND_CONNECTIONS;
+
+    // === 全局变量 ===
+    const uiStatus = document.getElementById('status-text');
+    const uiLeft = document.getElementById('left-cmd');
+    const uiRight = document.getElementById('right-cmd');
+    const gestureCanvas = document.getElementById('gesture-canvas');
+    const gestureCtx = gestureCanvas.getContext('2d');
+    
+    // ⚠️ 左右手校准配置 ⚠️
+    // 如果举起左手系统没反应，请尝试交换下面两个值 ('Left' <-> 'Right')
+    // 默认配置适合：前置摄像头镜像模式
+    const HAND_LABEL_LEFT_PHYSICAL = 'Right'; // 画面里的"Right"标签实际上是你的左手(镜像)
+    const HAND_LABEL_RIGHT_PHYSICAL = 'Left'; 
+
+    // === 1. Three.js 场景初始化 ===
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x050505, 0.002);
+
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.z = 8;
+
+    const renderer = new THREE.WebGLRenderer({
+        canvas: document.getElementById('webgl-canvas'),
+        antialias: true,
+        alpha: true // 允许透明背景
+    });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(window.devicePixelRatio);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.autoRotate = false;
+
+    // === 2. 几何形状生成算法 ===
+    const GeometryUtils = {
+        getSphere: (count, radius) => {
+            const positions = [];
+            for (let i = 0; i < count; i++) {
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos((Math.random() * 2) - 1);
+                positions.push(
+                    radius * Math.sin(phi) * Math.cos(theta),
+                    radius * Math.sin(phi) * Math.sin(theta),
+                    radius * Math.cos(phi)
+                );
+            }
+            return positions;
+        },
+        getHeart: (count, scale) => {
+            const positions = [];
+            for (let i = 0; i < count; i++) {
+                let x, y, z;
+                while (true) {
+                    x = (Math.random() * 2 - 1) * 2;
+                    y = (Math.random() * 2 - 1) * 2;
+                    z = (Math.random() * 2 - 1) * 2;
+                    const a = x * x + 9/4 * y * y + z * z - 1;
+                    if (a * a * a - x * x * z * z * z - 9/80 * y * y * z * z * z < 0) {
+                        positions.push(x * scale, y * scale, z * scale);
+                        break;
+                    }
+                }
+            }
+            return positions;
+        },
+        getSaturn: (count, radius) => {
+            const positions = [];
+            const ringCount = Math.floor(count * 0.4);
+            const sphereCount = count - ringCount;
+            // 球体
+            positions.push(...GeometryUtils.getSphere(sphereCount, radius));
+            // 环
+            for(let i=0; i<ringCount; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const r = radius * 1.6 + Math.random() * radius; 
+                positions.push(
+                    r * Math.cos(angle), 
+                    (Math.random()-0.5)*0.3, 
+                    r * Math.sin(angle)
+                );
+            }
+            return positions;
+        },
+        getText: (count, textString, scale) => {
+            const c = document.createElement('canvas');
+            const ctx = c.getContext('2d');
+            c.width = 500; c.height = 500;
+            ctx.fillStyle = '#000'; ctx.fillRect(0,0,500,500);
+            ctx.fillStyle = '#fff'; ctx.font = 'Bold 400px Arial';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText(textString, 250, 250);
+            
+            const data = ctx.getImageData(0,0,500,500).data;
+            const valid = [];
+            for(let y=0; y<500; y+=6) { // 步长加大一点减少计算量
+                for(let x=0; x<500; x+=6) {
+                    if(data[(y*500+x)*4] > 128) {
+                        valid.push({x:(x-250)/250*scale, y:-(y-250)/250*scale});
+                    }
+                }
+            }
+            const pos = [];
+            for(let i=0; i<count; i++) {
+                const p = valid[Math.floor(Math.random()*valid.length)] || {x:0,y:0};
+                pos.push(p.x, p.y, (Math.random()-0.5)*0.5);
+            }
+            return pos;
+        }
+    };
+
+    // === 3. 粒子储藏器类 (核心) ===
+    class ParticleStorage {
+        constructor(id, particleCount = 4000) {
+            this.id = id;
+            this.count = particleCount;
+            this.params = {
+                visible: id === 0, // 0号默认显示
+                size: id === 0 ? 0.04 : 0.08,
+                color: id === 0 ? 0x0066ff : 0x00ffff,
+                speed: 0.1
+            };
+            
+            this.targetScale = 1.0;
+            this.geometry = new THREE.BufferGeometry();
+            this.positions = new Float32Array(this.count * 3);
+            this.targetPositions = new Float32Array(this.count * 3);
+            
+            // 初始化爆炸效果
+            for(let i=0; i<this.count*3; i++) {
+                this.positions[i] = (Math.random()-0.5)*50;
+                this.targetPositions[i] = this.positions[i];
+            }
+            
+            this.geometry.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+            
+            this.material = new THREE.PointsMaterial({
+                size: this.params.size,
+                color: this.params.color,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            this.mesh = new THREE.Points(this.geometry, this.material);
+            this.mesh.visible = this.params.visible;
+            scene.add(this.mesh);
+
+            if(id===0) this.transformTo('sphere');
+            else this.transformTo('random');
+        }
+
+        transformTo(shape, text='') {
+            let pos = [];
+            switch(shape) {
+                case 'sphere': pos = GeometryUtils.getSphere(this.count, 4); break;
+                case 'heart': pos = GeometryUtils.getHeart(this.count, 0.4); break;
+                case 'saturn': pos = GeometryUtils.getSaturn(this.count, 3); break;
+                case 'text': pos = GeometryUtils.getText(this.count, text || "AI", 5); break;
+                default: pos = GeometryUtils.getSphere(this.count, 15); // Random
+            }
+            // 填充目标数组
+            for(let i=0; i<this.count*3; i++) {
+                this.targetPositions[i] = pos[i%pos.length] || 0;
+            }
+        }
+
+        update() {
+            if(!this.params.visible) {
+                this.mesh.visible = false;
+                return;
+            }
+            this.mesh.visible = true;
+            this.mesh.material.size = this.params.size;
+            this.mesh.material.color.setHex(this.params.color);
+            
+            // 缓慢自转
+            this.mesh.rotation.y += 0.002;
+
+            // 缩放动画 (Lerp)
+            if (this.id !== 0) {
+                 this.mesh.scale.lerp(new THREE.Vector3(this.targetScale, this.targetScale, this.targetScale), 0.1);
+            }
+
+            // 粒子位置移动动画 (Morphing)
+            const cur = this.geometry.attributes.position.array;
+            const tar = this.targetPositions;
+            let dirty = false;
+            
+            for(let i=0; i<this.count*3; i++) {
+                const diff = tar[i] - cur[i];
+                if(Math.abs(diff) > 0.01) {
+                    cur[i] += diff * this.params.speed;
+                    dirty = true;
+                }
+            }
+            if(dirty) this.geometry.attributes.position.needsUpdate = true;
+        }
+    }
+
+    // === 4. 初始化所有储藏器 ===
+    const storages = [];
+    const gui = new GUI({ title: '控制台 (UI)' });
+    
+    // 生成 0-5 号
+    for(let i=0; i<=5; i++) {
+        const isBg = (i === 0);
+        const s = new ParticleStorage(i, isBg ? 2000 : 5000);
+        storages.push(s);
+
+        if(!isBg) {
+            const f = gui.addFolder(`储藏器 ${i}`);
+            const conf = { shape: 'random', text: 'HELLO' };
+            
+            f.add(s.params, 'visible').name('状态:可见').listen();
+            f.addColor(s.params, 'color');
+            f.add(conf, 'shape', ['sphere', 'heart', 'saturn', 'text']).onChange(v=> s.transformTo(v));
+            f.add(conf, 'text');
+            f.add({go:()=>s.transformTo('text', conf.text)}, 'go').name('生成文字');
+            
+            if(i!==1) f.close(); // 默认展开第一个，其他折叠
+        }
+    }
+    gui.addFolder('0号背景 (常驻)').addColor(storages[0].params, 'color');
+
+    // === 5. 手势逻辑算法 ===
+    const GestureLogic = {
+        getDistance: (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y),
+        
+        countFingers: (lm) => {
+            // 判定指尖是否在指关节之上 (Canvas坐标Y轴向下增大，所以 < 代表更高)
+            let c = 0;
+            if(lm[8].y < lm[6].y) c++;  // 食指
+            if(lm[12].y < lm[10].y) c++; // 中指
+            if(lm[16].y < lm[14].y) c++; // 无名指
+            if(lm[20].y < lm[18].y) c++; // 小指
+            // 拇指判定 (X轴)
+            if(Math.abs(lm[4].x - lm[17].x) > Math.abs(lm[3].x - lm[17].x)) c++;
+            return c;
+        }
+    };
+
+    // === 6. MediaPipe 启动与回调 ===
+    // 注意：这里使用全局 Hands，不再 import
+    const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+    hands.setOptions({
+        maxNumHands: 2,
+        modelComplexity: 1,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5
+    });
+    
+    hands.onResults(results => {
+        uiStatus.innerText = "运行正常";
+        uiStatus.style.color = "#0f0";
+        
+        // 1. 清空画布并准备镜像绘制
+        gestureCtx.save();
+        gestureCtx.clearRect(0, 0, gestureCanvas.width, gestureCanvas.height);
+        gestureCtx.translate(gestureCanvas.width, 0);
+        gestureCtx.scale(-1, 1);
+
+        // 2. 遍历双手
+        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+            for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+                const lm = results.multiHandLandmarks[i];
+                const label = results.multiHandedness[i].label; // "Left" or "Right"
+                
+                // 判断当前是哪只手 (物理意义上的)
+                const isPhysicalLeft = (label === HAND_LABEL_LEFT_PHYSICAL);
+                
+                // 绘制骨骼 (左手绿，右手青)
+                const color = isPhysicalLeft ? '#00FF00' : '#00FFFF';
+                drawConnectors(gestureCtx, lm, HAND_CONNECTIONS, {color: color, lineWidth: 2});
+                drawLandmarks(gestureCtx, lm, {color: '#fff', lineWidth: 1, radius: 2});
+
+                // --- 逻辑处理 ---
+                
+                // ✋ 左手：切换储藏器
+                if (isPhysicalLeft) {
+                    const count = GestureLogic.countFingers(lm);
+                    uiLeft.innerText = `${count} 指 (显示层${count})`;
+                    uiLeft.classList.add('active');
+
+                    // 遍历储藏器设置可见性
+                    storages.forEach(s => {
+                        if(s.id === 0) return; // 跳过背景
+                        
+                        if(count > 0 && s.id === count) {
+                            if(!s.params.visible) {
+                                // 刚激活时，随机变个形状增加趣味
+                                const shapes = ['sphere', 'heart', 'saturn'];
+                                s.transformTo(shapes[Math.floor(Math.random()*shapes.length)]);
+                            }
+                            s.params.visible = true;
+                        } else {
+                            s.params.visible = false;
+                        }
+                    });
+                } 
+                
+                // 👌 右手：缩放
+                else {
+                    const dist = GestureLogic.getDistance(lm[4], lm[8]); // 拇指与食指距离
+                    
+                    // 映射距离到缩放比例 (0.02~0.25 -> 0.5~4.0)
+                    let targetScale = (dist - 0.02) * 15;
+                    targetScale = Math.max(0.5, Math.min(targetScale, 4.0)); // 限制最大最小
+                    
+                    uiRight.innerText = `${targetScale.toFixed(2)}x`;
+                    uiRight.classList.add('active');
+
+                    // 应用缩放
+                    storages.forEach(s => {
+                        if(s.id !== 0 && s.params.visible) {
+                            s.targetScale = targetScale;
+                        }
+                    });
+                }
+            }
+        } else {
+            // 没有检测到手时的UI复位
+            uiLeft.classList.remove('active');
+            uiRight.classList.remove('active');
+        }
+        
+        gestureCtx.restore();
+    });
+
+    // 启动摄像头
+    const video = document.getElementById('input-video');
+    const cameraFeed = new Camera(video, {
+        onFrame: async () => await hands.send({image: video}),
+        width: 1280,
+        height: 720
+    });
+    cameraFeed.start()
+        .then(() => uiStatus.innerText = "摄像头已启动")
+        .catch(err => uiStatus.innerText = "摄像头错误: " + err);
+
+    // === 7. 渲染循环 ===
+    function animate() {
+        requestAnimationFrame(animate);
+        storages.forEach(s => s.update());
+        controls.update();
+        renderer.render(scene, camera);
+    }
+    
+    // 窗口自适应
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        gestureCanvas.width = window.innerWidth;
+        gestureCanvas.height = window.innerHeight;
+    });
+
+    animate();
+</script>
+</body>
+</html>

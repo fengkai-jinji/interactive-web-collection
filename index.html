@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interactive Web Collection · 交互网页作品集</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        min-height: 100vh;
+        background: radial-gradient(1200px 600px at 50% -10%, #1b2a4a 0%, #070a14 55%, #04060c 100%);
+        color: #e8ecf5;
+        font-family: "Noto Serif SC", "PingFang SC", "Microsoft YaHei", serif;
+        display: flex; flex-direction: column; align-items: center;
+        padding: 64px 20px 48px;
+    }
+    h1 {
+        font-size: clamp(28px, 5vw, 44px);
+        letter-spacing: 4px; font-weight: 600; text-align: center;
+        background: linear-gradient(to bottom, #ffffff, #9db8e8);
+        -webkit-background-clip: text; background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    .sub { margin-top: 14px; color: rgba(232,236,245,.55); letter-spacing: 3px; font-size: 13px; text-transform: uppercase; text-align: center; }
+    .grid {
+        margin-top: 52px; width: min(980px, 100%);
+        display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px;
+    }
+    a.card {
+        text-decoration: none; color: inherit; display: block;
+        background: rgba(255,255,255,.04);
+        border: 1px solid rgba(255,255,255,.10);
+        border-radius: 14px; padding: 26px 22px;
+        transition: transform .35s ease, border-color .35s ease, background .35s ease;
+        backdrop-filter: blur(6px);
+    }
+    a.card:hover { transform: translateY(-6px); border-color: rgba(157,184,232,.55); background: rgba(255,255,255,.07); }
+    .emoji { font-size: 30px; }
+    .name { margin-top: 14px; font-size: 18px; letter-spacing: 1px; }
+    .desc { margin-top: 8px; font-size: 13px; line-height: 1.7; color: rgba(232,236,245,.62); }
+    .tag { display: inline-block; margin-top: 14px; font-size: 11px; letter-spacing: 2px; color: #9db8e8; border: 1px solid rgba(157,184,232,.4); padding: 3px 10px; border-radius: 999px; }
+    footer { margin-top: 56px; color: rgba(232,236,245,.35); font-size: 12px; letter-spacing: 2px; text-align: center; line-height: 2; }
+</style>
+</head>
+<body>
+    <h1>交互网页作品集</h1>
+    <div class="sub">Interactive Web Collection</div>
+
+    <div class="grid">
+        <a class="card" href="./pages/particle-gesture-3d.html">
+            <div class="emoji">🖐️</div>
+            <div class="name">3D 粒子手势交互系统</div>
+            <div class="desc">摄像头手势识别驱动的 3D 粒子系统，张开手掌、握拳之间，星尘随手势聚散。</div>
+            <span class="tag">MediaPipe · Three.js</span>
+        </a>
+        <a class="card" href="./pages/grand-luxury-tree.html">
+            <div class="emoji">🎄</div>
+            <div class="name">Grand Luxury Tree</div>
+            <div class="desc">华丽圣诞树粒子特效，可上传照片点缀枝头，也可放任意视频作开场，配乐与字幕俱全的节日氛围页。</div>
+            <span class="tag">Particles · Music</span>
+        </a>
+        <a class="card" href="./pages/lina-winter-gentle.html">
+            <div class="emoji">❄️</div>
+            <div class="name">Lina // THE WORLD IS GENTLE</div>
+            <div class="desc">冬日温柔版：飘雪与星光里浮现一句句暖心小字——“今年的冬天是最好的冬天。”</div>
+            <span class="tag">Winter Edition</span>
+        </a>
+        <a class="card" href="./pages/sakura-erii-gentle.html">
+            <div class="emoji">🌸</div>
+            <div class="name">Sakura &amp; Erii // THE WORLD IS GENTLE</div>
+            <div class="desc">绘梨衣主题版：小怪兽与 Sakura 的天空树之约，世界很温柔，我们也是。</div>
+            <span class="tag">Erii Edition</span>
+        </a>
+    </div>
+
+    <footer>
+        全部作品为单文件 HTML，浏览器直接打开即可运行<br>
+        Built with ♥ · fengkai-jinji
+    </footer>
+</body>
+</html>

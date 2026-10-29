@@ -1,0 +1,575 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grand Luxury Tree - Subtitle Fixed</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Great+Vibes&family=Noto+Serif+SC:wght@500&display=swap" rel="stylesheet">
+    
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000000; font-family: 'Times New Roman', serif; }
+        #canvas-container { width: 100vw; height: 100vh; position: absolute; top: 0; left: 0; z-index: 1; }
+        
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            z-index: 10; pointer-events: none;
+            display: flex; flex-direction: column; align-items: center; padding-top: 40px; box-sizing: border-box;
+        }
+        .ui-hidden { opacity: 0; pointer-events: none !important; }
+
+        #loader {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: #000; z-index: 100;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            transition: opacity 0.8s ease-out;
+        }
+        .spinner {
+            width: 40px; height: 40px; border: 1px solid rgba(212, 175, 55, 0.2); 
+            border-top: 1px solid #d4af37; border-radius: 50%; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        h1 { 
+            color: #fceea7; font-size: 56px; margin: 0; font-weight: 400; letter-spacing: 6px; 
+            text-shadow: 0 0 50px rgba(252, 238, 167, 0.6); 
+            background: linear-gradient(to bottom, #fff, #eebb66);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            font-family: 'Cinzel', serif; opacity: 0.9; transition: opacity 0.5s ease;
+        }
+
+        .upload-wrapper { margin-top: 20px; pointer-events: auto; text-align: center; transition: opacity 0.5s ease; }
+        .upload-btn {
+            background: rgba(20, 20, 20, 0.6); border: 1px solid rgba(212, 175, 55, 0.4); 
+            color: #d4af37; padding: 10px 25px; cursor: pointer; text-transform: uppercase; 
+            letter-spacing: 3px; font-size: 10px; transition: all 0.4s; display: inline-block; backdrop-filter: blur(5px);
+        }
+        .upload-btn:hover { background: #d4af37; color: #000; box-shadow: 0 0 20px rgba(212, 175, 55, 0.5); }
+        .hint-text { color: rgba(212, 175, 55, 0.5); font-size: 9px; margin-top: 8px; letter-spacing: 1px; text-transform: uppercase; line-height: 1.5; }
+
+        #file-input { display: none; }
+        #video-input { display: none; }
+        #video-upload-btn { margin-left: 10px; }
+
+        #webcam-wrapper {
+            position: absolute; bottom: 40px; right: 40px; width: 160px; height: 120px;
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; overflow: hidden; opacity: 0.7;
+            pointer-events: none; transform: scaleX(-1);
+        }
+        
+        #music-wrapper {
+            position: absolute; top: 20px; right: 20px; z-index: 50; pointer-events: auto;
+            background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(212, 175, 55, 0.3);
+            border-radius: 4px; backdrop-filter: blur(5px);
+        }
+
+        /* --- VIDEO PLAYER STYLES --- */
+        #video-wrapper {
+            position: fixed;
+            z-index: 200; 
+            background: #000;
+            border: 2px solid rgba(212, 175, 55, 0.5);
+            box-shadow: 0 0 30px rgba(212, 175, 55, 0.3);
+            transition: all 1.2s cubic-bezier(0.25, 1, 0.5, 1);
+            overflow: hidden;
+            border-radius: 8px;
+            display: flex; justify-content: center; align-items: center;
+        }
+
+        #video-wrapper.video-intro {
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 70vw; height: 39.375vw; 
+            max-width: 900px; max-height: 506px;
+        }
+
+        #video-wrapper.video-docked {
+            top: 120px; right: 20px; left: auto; 
+            transform: translate(0, 0);
+            width: 220px; height: 124px;
+            border: 1px solid rgba(212, 175, 55, 0.3);
+            z-index: 40; 
+        }
+
+        /* FIX: CHANGED TO CONTAIN TO SHOW SUBTITLES */
+        #intro-video { 
+            width: 100%; 
+            height: 100%; 
+            object-fit: contain; /* Ensures full video is seen, no cropping */
+            background: #000;
+        }
+
+        /* Manual Play Button (Fallback) */
+        #play-overlay {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.4);
+            display: flex; justify-content: center; align-items: center;
+            cursor: pointer; z-index: 5;
+            display: none; 
+        }
+        .play-icon {
+            width: 60px; height: 60px;
+            border: 2px solid #d4af37; border-radius: 50%;
+            display: flex; justify-content: center; align-items: center;
+            color: #d4af37; font-size: 30px; padding-left: 5px; 
+            background: rgba(0,0,0,0.6);
+            transition: all 0.3s;
+        }
+        #play-overlay:hover .play-icon { background: #d4af37; color: #000; box-shadow: 0 0 20px #d4af37; }
+
+        /* Close Button */
+        #video-close-btn {
+            position: absolute; top: 10px; right: 10px;
+            width: 30px; height: 30px;
+            background: rgba(212, 175, 55, 0.8);
+            color: #000; font-weight: bold; font-family: sans-serif;
+            border-radius: 50%; cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            opacity: 0; pointer-events: none; transition: opacity 0.5s;
+            z-index: 10;
+        }
+        #video-close-btn:hover { background: #fff; }
+        #video-wrapper:hover #video-close-btn, #video-wrapper.can-close #video-close-btn {
+            opacity: 1; pointer-events: auto;
+        }
+        
+        #mode-indicator {
+            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+            color: #d4af37; font-family: 'Cinzel', serif; font-size: 14px;
+            text-shadow: 0 0 10px rgba(212, 175, 55, 0.5); opacity: 0.8;
+        }
+    </style>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+                "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/+esm"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <div id="loader"><div class="spinner"></div><div class="loader-text">Loading Holiday Magic</div></div>
+
+    <div id="music-wrapper">
+        <iframe frameborder="no" border="0" marginwidth="0" marginheight="0" width="330" height="86" 
+            src="https://music.163.com/outchain/player?type=2&id=1869248652&auto=1&height=66"></iframe>
+    </div>
+
+    <div id="video-wrapper" class="video-intro" style="display:none;">
+        <div id="video-close-btn">✕</div>
+        <div id="play-overlay"><div class="play-icon">▶</div></div>
+        <video id="intro-video" playsinline preload="metadata"></video>
+    </div>
+
+    <div id="canvas-container"></div>
+
+    <div id="ui-layer">
+        <h1>Merry Christmas</h1>
+        <div class="upload-wrapper">
+            <label class="upload-btn">Add Memories<input type="file" id="file-input" multiple accept="image/*"></label>
+            <label class="upload-btn" id="video-upload-btn">Add Video<input type="file" id="video-input" accept="video/*"></label>
+            <div class="hint-text">
+                Add Video: Play Any Local Video as Intro<br>
+                Gesture 'OK': Film Roll (Big)<br>
+                3-Finger Pinch: Inspect Photo (Fast Switch)<br>
+                Open Palm: Open Tree<br>
+                1 / 2: Wishes
+            </div>
+        </div>
+    </div>
+
+    <div id="mode-indicator">MODE: TREE</div>
+    <div id="webcam-wrapper"><video id="webcam" autoplay playsinline style="display:none;"></video><canvas id="webcam-preview"></canvas></div>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'; 
+        import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+
+        const CONFIG = {
+            colors: { bg: 0x000000, champagneGold: 0xffd966, deepGreen: 0x03180a, accentRed: 0x990000 },
+            particles: { count: 3200, dustCount: 2000, treeHeight: 24, treeRadius: 8 },
+            camera: { z: 45 }
+        };
+
+        const USER_PHOTOS = [
+            'https://i.postimg.cc/vH0z3c0h/f827db5638992a4a0e4b0889a9fc949b.jpg',
+            'https://i.postimg.cc/jqz3QqV4/0bbd23f623a01a177139da5169d71512.jpg',
+            'https://i.postimg.cc/MpGsSynd/08ae3302063485290d751aa823483639.jpg',
+            'https://i.postimg.cc/HLcBJd43/442e874571616355290e8802b808c3ad.jpg',
+            'https://i.postimg.cc/0NTZDFVz/b62d76df0c4a0eb5f7b05dd0c970d4f2.jpg',
+            'https://i.postimg.cc/WzjnfrRB/e9ae85ce02bee359d99506a8f60651c7.jpg'
+        ];
+
+        const STATE = {
+            mode: 'TREE', textType: null, hand: { detected: false, x: 0, y: 0 }, rotation: { x: 0, y: 0 },
+            lastGestureTime: 0, gestureBuffer: [], bufferSize: 3, inspectIndex: 0, hasReleasedPinch: true 
+        };
+
+        let scene, camera, renderer, composer, mainGroup, photoMeshGroup;
+        let clock = new THREE.Clock();
+        let particleSystem = []; let photoParticles = []; let fireworks = []; 
+        let handLandmarker, video, webcamCanvas, caneTexture, fireworkTexture; 
+
+        // --- VIDEO LOGIC: user uploads any local video as the intro ---
+        function initVideoPlayer() {
+            const wrapper = document.getElementById('video-wrapper');
+            const vid = document.getElementById('intro-video');
+            const btn = document.getElementById('video-close-btn');
+            const playOverlay = document.getElementById('play-overlay');
+            const videoInput = document.getElementById('video-input');
+            let currentVideoURL = null;
+
+            function startPlay() {
+                playOverlay.style.display = 'none';
+                vid.muted = false; // Unmute
+                vid.play().then(() => {
+                    // Success
+                }).catch(err => {
+                    console.log("Auto-play blocked", err);
+                    playOverlay.style.display = 'flex'; // Show button if failed
+                });
+            }
+
+            playOverlay.addEventListener('click', startPlay);
+
+            function dockVideo() {
+                wrapper.classList.remove('video-intro');
+                wrapper.classList.add('video-docked');
+                vid.controls = true;
+            }
+
+            vid.addEventListener('ended', () => wrapper.classList.add('can-close'));
+            btn.addEventListener('click', dockVideo);
+
+            // Any video file the visitor picks becomes the intro video.
+            // It plays locally in the browser only — nothing is uploaded anywhere.
+            videoInput.addEventListener('change', () => {
+                const file = videoInput.files && videoInput.files[0];
+                if (!file) return;
+                if (currentVideoURL) URL.revokeObjectURL(currentVideoURL);
+                currentVideoURL = URL.createObjectURL(file);
+                wrapper.classList.remove('video-docked', 'can-close');
+                wrapper.classList.add('video-intro');
+                vid.controls = false;
+                vid.src = currentVideoURL;
+                wrapper.style.display = 'flex';
+                startPlay();
+                videoInput.value = ''; // allow re-picking the same file later
+            });
+        }
+
+        // --- FIREWORKS ---
+        class Firework {
+            constructor(scene, startPos) {
+                this.scene = scene; this.isDead = false; this.age = 0; this.lifeSpan = 1.5 + Math.random();
+                const count = 60 + Math.floor(Math.random() * 40);
+                const geometry = new THREE.BufferGeometry();
+                const positions = new Float32Array(count * 3);
+                const velocities = []; const colors = new Float32Array(count * 3);
+                const colorPalette = [new THREE.Color(0xffd700), new THREE.Color(0xff0000), new THREE.Color(0xffffff), new THREE.Color(0xffaa00)];
+                const baseColor = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+                for(let i=0; i<count; i++) {
+                    positions[i*3] = startPos.x; positions[i*3+1] = startPos.y; positions[i*3+2] = startPos.z;
+                    const theta = Math.random() * Math.PI * 2; const phi = Math.random() * Math.PI;
+                    const speed = 5 + Math.random() * 8;
+                    velocities.push({ x: speed * Math.sin(phi) * Math.cos(theta), y: speed * Math.sin(phi) * Math.sin(theta), z: speed * Math.cos(phi) });
+                    colors[i*3] = baseColor.r; colors[i*3+1] = baseColor.g; colors[i*3+2] = baseColor.b;
+                }
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                this.velocities = velocities;
+                this.points = new THREE.Points(geometry, new THREE.PointsMaterial({ size: 0.8, vertexColors: true, map: fireworkTexture, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 1 }));
+                scene.add(this.points);
+            }
+            update(dt) {
+                this.age += dt; if(this.age >= this.lifeSpan) { this.isDead = true; this.points.visible = false; return; }
+                const positions = this.points.geometry.attributes.position.array;
+                const damping = 0.95; const gravity = -3.0;
+                for(let i=0; i<this.velocities.length; i++) {
+                    this.velocities[i].x *= damping; this.velocities[i].y *= damping; this.velocities[i].z *= damping; this.velocities[i].y += gravity * dt;
+                    positions[i*3] += this.velocities[i].x * dt; positions[i*3+1] += this.velocities[i].y * dt; positions[i*3+2] += this.velocities[i].z * dt;
+                }
+                this.points.geometry.attributes.position.needsUpdate = true; this.points.material.opacity = 1 - (this.age / this.lifeSpan);
+            }
+            dispose() { this.scene.remove(this.points); this.points.geometry.dispose(); this.points.material.dispose(); }
+        }
+
+        function sampleTextCoordinates(text, fontSize = 60, fontFace = 'Arial', separateLines = false) {
+            const canvas = document.createElement('canvas'); const ctx = canvas.getContext('2d');
+            const width = 1024; const height = 512; canvas.width = width; canvas.height = height;
+            ctx.fillStyle = '#FFFFFF'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            if (separateLines) {
+                ctx.font = `700 ${fontSize * 0.9}px "${fontFace}", "Cinzel", serif`; 
+                const splitText = text.split("："); 
+                if (splitText.length > 1) { ctx.fillText(splitText[0] + "：", width/2, height/2 - 50); ctx.fillText(splitText[1], width/2, height/2 + 50); }
+                else { ctx.fillText(text, width/2, height/2); }
+            } else { ctx.font = `400 ${fontSize}px "${fontFace}"`; ctx.fillText(text, width/2, height/2); }
+            const imageData = ctx.getImageData(0, 0, width, height).data;
+            const coordinates = [];
+            for (let y = 0; y < height; y += 4) {
+                for (let x = 0; x < width; x += 4) {
+                    if (imageData[(y * width + x) * 4] > 128) { coordinates.push(new THREE.Vector3((x - width/2) * 0.105, -(y - height/2) * 0.105, 0)); }
+                }
+            }
+            return coordinates;
+        }
+
+        async function init() {
+            initThree(); setupEnvironment(); setupLights(); createTextures(); createParticles(); createDust();     
+            createDefaultPhotos(); loadCustomPhotos(); setupPostProcessing(); setupEvents(); 
+            initVideoPlayer(); 
+            await initMediaPipe();
+            const loader = document.getElementById('loader');
+            loader.style.opacity = 0; setTimeout(() => loader.remove(), 800);
+            animate();
+        }
+
+        function initThree() {
+            const container = document.getElementById('canvas-container');
+            scene = new THREE.Scene(); scene.background = new THREE.Color(CONFIG.colors.bg);
+            scene.fog = new THREE.FogExp2(CONFIG.colors.bg, 0.015); 
+            camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 2, CONFIG.camera.z); 
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ReinhardToneMapping; renderer.toneMappingExposure = 2.0; 
+            container.appendChild(renderer.domElement);
+            mainGroup = new THREE.Group(); scene.add(mainGroup);
+        }
+
+        function setupEnvironment() { const pmremGenerator = new THREE.PMREMGenerator(renderer); scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture; }
+
+        function setupLights() {
+            scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+            const innerLight = new THREE.PointLight(0xffaa00, 2, 20); innerLight.position.set(0, 5, 0); mainGroup.add(innerLight);
+            const spotGold = new THREE.SpotLight(0xffcc66, 1200); spotGold.position.set(30, 40, 40); spotGold.angle = 0.5; scene.add(spotGold);
+            const fill = new THREE.DirectionalLight(0xffeebb, 0.8); fill.position.set(0, 0, 50); scene.add(fill);
+        }
+
+        function setupPostProcessing() {
+            const renderScene = new RenderPass(scene, camera);
+            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            bloomPass.threshold = 0.6; bloomPass.strength = 0.5; bloomPass.radius = 0.5;
+            composer = new EffectComposer(renderer); composer.addPass(renderScene); composer.addPass(bloomPass);
+        }
+
+        function createTextures() {
+            let canvas = document.createElement('canvas'); canvas.width = 128; canvas.height = 128; let ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff'; ctx.fillRect(0,0,128,128); ctx.fillStyle = '#800'; ctx.beginPath();
+            for(let i=-128; i<256; i+=32) { ctx.moveTo(i, 0); ctx.lineTo(i+32, 128); ctx.lineTo(i+16, 128); ctx.lineTo(i-16, 0); }
+            ctx.fill();
+            caneTexture = new THREE.CanvasTexture(canvas); caneTexture.wrapS = THREE.RepeatWrapping; caneTexture.wrapT = THREE.RepeatWrapping; caneTexture.repeat.set(3, 3);
+            canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 32; ctx = canvas.getContext('2d');
+            const grad = ctx.createRadialGradient(16,16,0,16,16,16); grad.addColorStop(0, 'rgba(255,255,255,1)'); grad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = grad; ctx.fillRect(0,0,32,32); fireworkTexture = new THREE.CanvasTexture(canvas);
+        }
+
+        class Particle {
+            constructor(mesh, type, isDust = false) {
+                this.mesh = mesh; this.type = type; this.isDust = isDust;
+                this.posTree = new THREE.Vector3(); this.posScatter = new THREE.Vector3(); this.posText = new THREE.Vector3();
+                this.baseScale = mesh.scale.x; this.isPartOfText = false;
+                const speedMult = (type === 'PHOTO') ? 0.3 : 2.0;
+                this.spinSpeed = new THREE.Vector3((Math.random()-0.5)*speedMult, (Math.random()-0.5)*speedMult, (Math.random()-0.5)*speedMult);
+                this.calculatePositions();
+            }
+
+            calculatePositions() {
+                const h = CONFIG.particles.treeHeight; let t = Math.random(); t = Math.pow(t, 0.8); 
+                const y = (t * h) - h/2; let rMax = CONFIG.particles.treeRadius * (1.0 - t); 
+                if (rMax < 0.5) rMax = 0.5;
+                const angle = t * 50 * Math.PI + Math.random() * Math.PI; const r = rMax * (0.8 + Math.random() * 0.4); 
+                this.posTree.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
+                let rScatter = this.isDust ? (12 + Math.random()*20) : (8 + Math.random()*12);
+                const theta = Math.random() * Math.PI * 2; const phi = Math.acos(2 * Math.random() - 1);
+                this.posScatter.set(rScatter * Math.sin(phi) * Math.cos(theta), rScatter * Math.sin(phi) * Math.sin(theta), rScatter * Math.cos(phi));
+            }
+
+            update(dt, mode) {
+                let target = this.posTree; let scaleTarget = this.baseScale; let lerpSpeed = 2.0;
+                if (mode === 'SCATTER') { target = this.posScatter; if (this.type === 'PHOTO') scaleTarget = 0.8; } 
+                else if (mode === 'TEXT') { if (this.isPartOfText) { target = this.posText; scaleTarget = Math.min(this.baseScale, 0.35); lerpSpeed = 3.5; } else { target = this.posScatter; scaleTarget = 0; } } 
+                else if (mode === 'FILM_ROLL') { if (this.type === 'PHOTO') { const idx = photoParticles.indexOf(this); const gap = 6.0; const totalWidth = photoParticles.length * gap; const timeOffset = clock.getElapsedTime() * 1.5; const adjustedX = ((idx * gap) - (timeOffset % totalWidth)); const displayX = adjustedX + (totalWidth / 2); let finalX = ((displayX + totalWidth/2) % totalWidth) - totalWidth/2; const y = Math.sin(clock.getElapsedTime() + idx) * 0.5; target = new THREE.Vector3(finalX * 2, y, 25); scaleTarget = 3.0; lerpSpeed = 3.0; this.mesh.rotation.set(0, 0, 0); } else { target = this.posScatter; scaleTarget = 0; } }
+                else if (mode === 'INSPECT') { if (this.type === 'PHOTO') { const myIndex = photoParticles.indexOf(this); if (myIndex === STATE.inspectIndex) { target = new THREE.Vector3(0, 0, 30); scaleTarget = 3.5; this.mesh.rotation.set(0, 0, 0); lerpSpeed = 6.0; } else { target = this.posTree; scaleTarget = this.baseScale; } } else { target = this.posTree; scaleTarget = this.baseScale * 0.5; } }
+                this.mesh.position.lerp(target, lerpSpeed * dt);
+                if (['SCATTER', 'TEXT'].includes(mode) && !this.isPartOfText) { this.mesh.rotation.x += this.spinSpeed.x * dt; this.mesh.rotation.y += this.spinSpeed.y * dt; } else if (mode === 'TREE' || mode === 'INSPECT') { if (mode !== 'INSPECT' || (this.type === 'PHOTO' && photoParticles.indexOf(this) !== STATE.inspectIndex)) { this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, 0, dt); this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, 0, dt); this.mesh.rotation.y += 0.5 * dt; } } else if (mode === 'TEXT' && this.isPartOfText) { this.mesh.rotation.set(0,0,0); }
+                if (this.isDust && mode !== 'TEXT' && mode !== 'FILM_ROLL') { scaleTarget = this.baseScale * (0.8 + 0.4 * Math.sin(clock.elapsedTime * 4 + this.mesh.id)); if (mode === 'TREE') scaleTarget = 0; }
+                this.mesh.scale.lerp(new THREE.Vector3(scaleTarget, scaleTarget, scaleTarget), 4 * dt);
+            }
+        }
+
+        function createParticles() {
+            photoMeshGroup = new THREE.Group();
+            const sphereGeo = new THREE.SphereGeometry(0.5, 32, 32); const boxGeo = new THREE.BoxGeometry(0.55, 0.55, 0.55); 
+            const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(0,-0.5,0), new THREE.Vector3(0,0.3,0), new THREE.Vector3(0.1,0.5,0), new THREE.Vector3(0.3,0.4,0)]);
+            const candyGeo = new THREE.TubeGeometry(curve, 16, 0.08, 8, false);
+            const goldMat = new THREE.MeshStandardMaterial({color: CONFIG.colors.champagneGold, metalness: 1.0, roughness: 0.1, envMapIntensity: 2.0});
+            const greenMat = new THREE.MeshStandardMaterial({color: CONFIG.colors.deepGreen, metalness: 0.2, roughness: 0.8});
+            const redMat = new THREE.MeshPhysicalMaterial({color: CONFIG.colors.accentRed, metalness: 0.3, roughness: 0.2, clearcoat: 1.0});
+            const candyMat = new THREE.MeshStandardMaterial({ map: caneTexture, roughness: 0.4 });
+            for (let i = 0; i < CONFIG.particles.count; i++) {
+                const rand = Math.random(); let mesh, type;
+                if (rand < 0.40) { mesh = new THREE.Mesh(boxGeo, greenMat); type = 'BOX'; }
+                else if (rand < 0.70) { mesh = new THREE.Mesh(boxGeo, goldMat); type = 'GOLD_BOX'; }
+                else if (rand < 0.92) { mesh = new THREE.Mesh(sphereGeo, goldMat); type = 'GOLD_SPHERE'; }
+                else if (rand < 0.97) { mesh = new THREE.Mesh(sphereGeo, redMat); type = 'RED'; }
+                else { mesh = new THREE.Mesh(candyGeo, candyMat); type = 'CANE'; }
+                const s = 0.4 + Math.random() * 0.5; mesh.scale.set(s,s,s); mesh.rotation.set(Math.random()*6, Math.random()*6, Math.random()*6);
+                mainGroup.add(mesh); particleSystem.push(new Particle(mesh, type, false));
+            }
+            const star = new THREE.Mesh(new THREE.OctahedronGeometry(1.2, 0), new THREE.MeshStandardMaterial({color: 0xffdd88, emissive: 0xffaa00, emissiveIntensity: 1.0}));
+            star.position.set(0, CONFIG.particles.treeHeight/2 + 1.2, 0); mainGroup.add(star); mainGroup.add(photoMeshGroup);
+        }
+
+        function createDust() {
+            const geo = new THREE.TetrahedronGeometry(0.08, 0); const mat = new THREE.MeshBasicMaterial({ color: 0xffeebb, transparent: true, opacity: 0.8 });
+            for(let i=0; i<CONFIG.particles.dustCount; i++) { const mesh = new THREE.Mesh(geo, mat); mesh.scale.setScalar(0.5 + Math.random()); mainGroup.add(mesh); particleSystem.push(new Particle(mesh, 'DUST', true)); }
+        }
+
+        function createDefaultPhotos() {
+            const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 512; const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#050505'; ctx.fillRect(0,0,512,512); ctx.strokeStyle = '#eebb66'; ctx.lineWidth = 15; ctx.strokeRect(20,20,472,472);
+            ctx.font = '400 90px "Great Vibes", "Times New Roman", serif'; ctx.fillStyle = '#eebb66'; ctx.textAlign = 'center'; 
+            ctx.fillText("Merry", 256, 210); ctx.fillText("Christmas", 256, 330);
+            const tex = new THREE.CanvasTexture(canvas); tex.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(tex);
+        }
+        
+        function loadCustomPhotos() {
+            const loader = new THREE.TextureLoader(); loader.crossOrigin = 'anonymous'; 
+            USER_PHOTOS.forEach(url => { loader.load(url, (texture) => { texture.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(texture); }); });
+        }
+
+        function addPhotoToScene(texture) {
+            const group = new THREE.Group();
+            group.add(new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.4, 0.05), new THREE.MeshStandardMaterial({ color: CONFIG.colors.champagneGold, metalness: 1.0 })));
+            // FIX: MODERATE BRIGHTNESS - 0xe0e0e0 (approx 88%)
+            const photo = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 1.2), new THREE.MeshBasicMaterial({ map: texture, color: 0xe0e0e0 }));
+            photo.position.z = 0.04; group.add(photo);
+            const s = 0.8; group.scale.set(s,s,s); photoMeshGroup.add(group);
+            particleSystem.push(new Particle(group, 'PHOTO', false)); photoParticles.push(particleSystem[particleSystem.length-1]);
+        }
+
+        function handleImageUpload(e) {
+            if(!e.target.files.length) return;
+            Array.from(e.target.files).forEach(f => {
+                const reader = new FileReader();
+                reader.onload = (ev) => { new THREE.TextureLoader().load(ev.target.result, (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); }); }
+                reader.readAsDataURL(f);
+            });
+        }
+
+        // --- MEDIAPIPE & GESTURES ---
+        async function initMediaPipe() {
+            video = document.getElementById('webcam');
+            webcamCanvas = document.getElementById('webcam-preview');
+            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
+            handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`, delegate: "GPU" },
+                runningMode: "VIDEO", numHands: 1
+            });
+            if (navigator.mediaDevices?.getUserMedia) {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                video.addEventListener("loadeddata", predictWebcam);
+            }
+        }
+
+        let lastVideoTime = -1;
+        async function predictWebcam() {
+            if (video.currentTime !== lastVideoTime) {
+                lastVideoTime = video.currentTime;
+                if (handLandmarker) {
+                    const result = handLandmarker.detectForVideo(video, performance.now());
+                    const ctx = webcamCanvas.getContext('2d');
+                    ctx.clearRect(0,0,webcamCanvas.width, webcamCanvas.height);
+                    if(result.landmarks.length > 0) { drawLandmarks(ctx, result.landmarks[0]); processGestures(result); }
+                    else { STATE.hand.detected = false; }
+                }
+            }
+            requestAnimationFrame(predictWebcam);
+        }
+
+        function drawLandmarks(ctx, lm) {
+             ctx.fillStyle = '#00ff00';
+             lm.forEach(l => { ctx.beginPath(); ctx.arc(l.x * 160, l.y * 120, 2, 0, 2*Math.PI); ctx.fill(); });
+        }
+
+        function classifyCurrentFrame(lm) {
+            const isFingerUp = (tip, pip) => tip.y < (pip.y - 0.02); 
+            const tTip = lm[4]; const iTip = lm[8]; const iPip = lm[6]; const mTip = lm[12]; const mPip = lm[10]; const rTip = lm[16]; const rPip = lm[14]; const pTip = lm[20]; const pPip = lm[18];
+            const indexUp = isFingerUp(iTip, iPip); const middleUp = isFingerUp(mTip, mPip); const ringUp = isFingerUp(rTip, rPip); const pinkyUp = isFingerUp(pTip, pPip);
+            const pinchDist = Math.hypot(tTip.x - iTip.x, tTip.y - iTip.y); const spreadDist = Math.abs(iTip.x - mTip.x);
+            const distThumbMiddle = Math.hypot(tTip.x - mTip.x, tTip.y - mTip.y);
+            if (pinchDist < 0.08 && distThumbMiddle < 0.08) return 'PINCH_THREE';
+            if (pinchDist < 0.06 && middleUp && ringUp && pinkyUp && distThumbMiddle > 0.1) return 'OK';
+            if (indexUp && !middleUp && !ringUp && !pinkyUp) return 'ONE';
+            if (indexUp && middleUp && !ringUp && !pinkyUp && spreadDist > 0.05) return 'TWO';
+            if (indexUp && middleUp && ringUp && pinkyUp && pinchDist > 0.1) return 'OPEN';
+            if (!indexUp && !middleUp && !ringUp && !pinkyUp) return 'FIST';
+            return 'UNKNOWN';
+        }
+
+        function processGestures(result) {
+            if (!result.landmarks.length) return;
+            STATE.hand.detected = true; const lm = result.landmarks[0];
+            STATE.hand.x = (lm[9].x - 0.5) * 2; STATE.hand.y = (lm[9].y - 0.5) * 2;
+            const currentGesture = classifyCurrentFrame(lm);
+            STATE.gestureBuffer.push(currentGesture); if (STATE.gestureBuffer.length > STATE.bufferSize) STATE.gestureBuffer.shift();
+            const counts = {}; STATE.gestureBuffer.forEach(g => { counts[g] = (counts[g] || 0) + 1; });
+            let stableGesture = null; const threshold = Math.ceil(STATE.bufferSize * 0.6); 
+            for (const g in counts) { if (counts[g] >= threshold) { stableGesture = g; break; } }
+            
+            if (stableGesture !== 'PINCH_THREE') STATE.hasReleasedPinch = true; 
+            if (stableGesture === 'FIST') { if (STATE.mode !== 'TREE') { STATE.mode = 'TREE'; document.getElementById('mode-indicator').innerText = "MODE: TREE"; } return; }
+            if (!stableGesture || stableGesture === 'UNKNOWN') return;
+            const now = performance.now();
+
+            if (stableGesture === 'OPEN') { if (STATE.mode !== 'SCATTER') { STATE.mode = 'SCATTER'; document.getElementById('mode-indicator').innerText = "MODE: SCATTER (OPEN TREE)"; } }
+            else if (stableGesture === 'OK') { if (STATE.mode !== 'FILM_ROLL') { STATE.mode = 'FILM_ROLL'; document.getElementById('mode-indicator').innerText = "MODE: FILM ROLL (BIG)"; } }
+            else if (stableGesture === 'PINCH_THREE') { if (STATE.mode !== 'INSPECT') { STATE.mode = 'INSPECT'; document.getElementById('mode-indicator').innerText = "MODE: INSPECT PHOTO"; STATE.hasReleasedPinch = false; } else { if (STATE.hasReleasedPinch) { if (photoParticles.length > 0) { STATE.inspectIndex = (STATE.inspectIndex + 1) % photoParticles.length; } STATE.hasReleasedPinch = false; } } }
+            else if (stableGesture === 'ONE') { if (STATE.mode !== 'TEXT' || STATE.textType !== 'MERRY') { activateTextMode('Merry Christmas', 'MERRY', 'Great Vibes', 150); spawnFireworks(); STATE.lastGestureTime = now; } else if (now - STATE.lastGestureTime > 3000) { spawnFireworks(); STATE.lastGestureTime = now; } }
+            else if (stableGesture === 'TWO') { if (STATE.mode !== 'TEXT' || STATE.textType !== 'BLESSING') { activateTextMode('To Lina：May your days be filled with happiness ^w^', 'BLESSING', 'Cinzel', 90); STATE.lastGestureTime = now; } }
+        }
+
+        function activateTextMode(text, typeId, fontFace, fontSize) {
+            STATE.mode = 'TEXT'; STATE.textType = typeId; document.getElementById('mode-indicator').innerText = `MODE: ${typeId === 'MERRY' ? 'MERRY XMAS' : 'BLESSING'}`;
+            const coords = sampleTextCoordinates(text, fontSize, fontFace, typeId === 'BLESSING');
+            const shuffled = [...particleSystem].sort(() => 0.5 - Math.random());
+            shuffled.forEach((p, i) => { if (i < coords.length) { p.isPartOfText = true; p.posText.set(coords[i].x, coords[i].y, 0); } else { p.isPartOfText = false; } });
+        }
+
+        function spawnFireworks() {
+            for(let i=0; i<4; i++) { setTimeout(() => { const x = (Math.random() - 0.5) * 30; const y = (Math.random() - 0.5) * 20; fireworks.push(new Firework(mainGroup, new THREE.Vector3(x, y, -5))); }, i * 400); }
+        }
+
+        function setupEvents() {
+            window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); composer.setSize(window.innerWidth, window.innerHeight); });
+            document.getElementById('file-input').addEventListener('change', handleImageUpload);
+            window.addEventListener('keydown', (e) => { if (e.key.toLowerCase() === 'h') document.querySelector('.upload-wrapper').classList.toggle('ui-hidden'); });
+        }
+
+        function animate() {
+            requestAnimationFrame(animate); const dt = clock.getDelta();
+            for(let i=fireworks.length-1; i>=0; i--) { fireworks[i].update(dt); if(fireworks[i].isDead) { fireworks[i].dispose(); fireworks.splice(i, 1); } }
+            const time = clock.getElapsedTime();
+            if (STATE.mode !== 'INSPECT' && STATE.mode !== 'FILM_ROLL') { camera.position.x = Math.sin(time * 0.1) * 2; camera.position.y = 2 + Math.cos(time * 0.15) * 2; } else { camera.position.lerp(new THREE.Vector3(0, 0, 45), 3 * dt); }
+            camera.lookAt(0, 0, 0);
+            if (STATE.hand.detected) { const targetY = STATE.hand.x * Math.PI * 0.6; const targetX = STATE.hand.y * Math.PI * 0.2; STATE.rotation.y += (targetY - STATE.rotation.y) * 5.0 * dt; STATE.rotation.x += (targetX - STATE.rotation.x) * 5.0 * dt; }
+            else { if(STATE.mode === 'TREE' || STATE.mode === 'INSPECT') { STATE.rotation.y += 0.3 * dt; STATE.rotation.x += (0 - STATE.rotation.x) * 2.0 * dt; } else if (STATE.mode === 'TEXT') { STATE.rotation.y = Math.sin(time) * 0.1; STATE.rotation.x = Math.cos(time) * 0.05; } else { STATE.rotation.y += 0.1 * dt; } }
+            mainGroup.rotation.y = STATE.rotation.y; mainGroup.rotation.x = STATE.rotation.x;
+            particleSystem.forEach(p => p.update(dt, STATE.mode));
+            composer.render();
+        }
+
+        init();
+    </script>
+</body>
+</html>
